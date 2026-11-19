@@ -12,6 +12,7 @@ package comp3011;
 
 import java.io.File;
 import java.util.List;
+import javafx.application.Platform;
 import java.util.function.BiConsumer;
 
 import javafx.scene.Scene;
@@ -34,6 +35,9 @@ public class VideoPlayerController {
     private final boolean subtitlesRequested;
     private boolean subtitlesEnabled;
     private List<Subtitle> subtitles = List.of();
+    private Thread subtitleThread;
+    private boolean playbackStarted;
+    private volatile boolean closing;
     private final VideoPlayerView view;
     private final BiConsumer<Integer, Integer> videoSizeChangedHandler;
 
@@ -101,22 +105,57 @@ public class VideoPlayerController {
         return view;
     }
 
-    // Enables the controls and tells the model to open the video.
+    // Start normally without subtitles. Otherwise prepare the first set of captions
+    // before starting playback so that they do not arrive too late.
     public void play(File file) {
         view.setPlaybackControlsDisabled(false);
         view.setSubtitlesAvailable(subtitlesRequested);
-        model.play(file);
-        // Temporary sample while checking the button, keyboard shortcut and timing.
-        // The next step will replace this with actual speech recognition.
-        if (subtitlesRequested) {
-            setSubtitles(List.of(
-                    new Subtitle(0, 3, "Subtitle test: first line"),
-                    new Subtitle(3, 6, "Subtitle test: second line")));
+        if (!subtitlesRequested) {
+            playbackStarted = true;
+            model.play(file);
+            return;
+        }
+
+        view.setStatus("Preparing subtitles...");
+        subtitleThread = new Thread(() -> {
+            try {
+                new SubtitleClient().getSubtitles(file, lines -> Platform.runLater(() -> {
+                    if (closing) {
+                        return;
+                    }
+                    setSubtitles(lines);
+                    startVideoIfNeeded(file);
+                }));
+                // Also handle a video with no audio track.
+                Platform.runLater(() -> startVideoIfNeeded(file));
+            } catch (Exception error) {
+                System.err.println("Could not load subtitles: " + error.getMessage());
+                Platform.runLater(() -> {
+                    if (!closing) {
+                        startVideoIfNeeded(file);
+                        view.setStatus("Subtitles unavailable (video still playing)");
+                    }
+                });
+            }
+        }, "subtitle-loader");
+        subtitleThread.setDaemon(true);
+        subtitleThread.start();
+    }
+
+    // This method is only called from the JavaFX application thread.
+    private void startVideoIfNeeded(File file) {
+        if (!closing && !playbackStarted) {
+            playbackStarted = true;
+            model.play(file);
         }
     }
 
     // Asks the model to release its resources.
     public void shutdown() {
+        closing = true;
+        if (subtitleThread != null) {
+            subtitleThread.interrupt();
+        }
         model.shutdown();
     }
 
@@ -170,6 +209,7 @@ public class VideoPlayerController {
 
     // Stops playback and closes the JavaFX application.
     private void stopAndExit() {
+        shutdown();
         model.stopPlayback();
         javafx.application.Platform.exit();
     }
@@ -182,7 +222,11 @@ public class VideoPlayerController {
     // Displays an image supplied by the model.
     private void onFrameReady(Image image) {
         view.setImage(image);
-        updateSubtitle();
+        if (image == null) {
+            view.setSubtitleText("");
+        } else {
+            updateSubtitle();
+        }
     }
 
     // Updates the status text shown in the controls.
