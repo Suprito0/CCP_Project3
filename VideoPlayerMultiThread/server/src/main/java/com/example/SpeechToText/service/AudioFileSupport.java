@@ -15,8 +15,8 @@ final class AudioFileSupport {
             throw new IllegalArgumentException("Audio file is empty");
         }
 
-        // OpenAI's transcription endpoint accepts files up to 25 MB.
-        if (audioFile.getSize() > 25L * 1024L * 1024L) {
+        // OpenAI's transcription endpoint accepts files up to 250 MB.
+        if (audioFile.getSize() > 250L * 1024L * 1024L) {
             throw new IllegalArgumentException("Audio file is too large");
         }
     }
