@@ -132,8 +132,8 @@ public class CommandLineController {
                 case '1' -> setDisplayId(1);
                 case '2' -> setDisplayId(2);
                 case 'n' -> effectNames.add("number");
-                case 's' -> subtitlesRequested = true;
-                case 'r' -> effectNames.add("scratch");
+                case 'S' -> subtitlesRequested = true;
+                case 's' -> effectNames.add("scratch");
                 case 'f' -> effectNames.add("flicker");
                 case 'w' -> effectNames.add("black-and-white");
                 case 'y' -> effectNames.add("yellow");
@@ -203,8 +203,8 @@ public class CommandLineController {
         System.out.println();
         System.out.println("Frame processors:");
         System.out.println("  -n, --number-frames    Render the frame number onto each frame");
-        System.out.println("  -s, --subtitle-frames Toggle speech subtitles on");
-        System.out.println("  -r, --scratch-frames   Render vertical film scratches");
+        System.out.println("  -S, --subtitle-frames  Toggle speech subtitles on");
+        System.out.println("  -s, --scratch-frames   Render vertical film scratches");
         System.out.println("  -f, --flicker-frames   Randomly dim frames");
         System.out.println("  -w, --black-and-white  Convert frames to black and white");
         System.out.println("  -y, --yellow-frames    Apply a warmer colour temperature");

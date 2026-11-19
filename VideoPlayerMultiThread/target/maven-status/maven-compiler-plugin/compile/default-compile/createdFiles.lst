@@ -15,6 +15,7 @@ comp3011/VideoPlayerAppLauncher.class
 comp3011/FrameProcessorFactory.class
 comp3011/InfoVideo.class
 comp3011/FrameScratcher.class
+comp3011/SubtitleClient.class
 comp3011/FrameNumberer.class
 comp3011/FrameVignetter.class
 comp3011/FramePepperer.class

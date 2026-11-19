@@ -11,7 +11,7 @@ class SubtitleOptionsTest {
     void usesSForSubtitlesAndRForScratches() throws Exception {
         File file = File.createTempFile("video-test", ".mp4");
         file.deleteOnExit();
-        CommandLineController cli = new CommandLineController(new String[]{"-sr", file.getAbsolutePath()});
+        CommandLineController cli = new CommandLineController(new String[]{"-Ss", file.getAbsolutePath()});
         assertTrue(cli.shouldLaunchApplication());
         assertTrue(cli.isSubtitlesRequested());
         assertEquals(java.util.List.of("scratch"), cli.getEffectNames());
