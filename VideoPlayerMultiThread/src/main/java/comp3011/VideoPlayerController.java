@@ -1,7 +1,7 @@
 /*
  * Starter code supplied for Adelaide University COMP3011 Assignment 2.
  * Students are free to modify this file for assessment purposes.
- * 
+ *
  * Authors:
  *   1. Simon Ratcliffe, in collaboration with GPT-5.6 Terra
  *   2. Suprito Iqbal, a1950138
@@ -12,9 +12,9 @@ package comp3011;
 
 import java.io.File;
 import java.util.List;
-import javafx.application.Platform;
 import java.util.function.BiConsumer;
 
+import javafx.application.Platform;
 import javafx.scene.Scene;
 import javafx.scene.image.Image;
 import javafx.scene.input.KeyCode;
@@ -22,7 +22,7 @@ import javafx.scene.input.KeyEvent;
 
 /**
  * The controller part of the video player model-view-controller architecture.
- * 
+ *
  * <p>
  * Wires up events from the {@link VideoPlayerView} to the
  * {@link VideoPlayerModel}.
@@ -36,7 +36,8 @@ public class VideoPlayerController {
     private boolean subtitlesEnabled;
     private List<Subtitle> subtitles = List.of();
     private Thread subtitleThread;
-    private boolean playbackStarted;
+    private File currentVideo;
+    private boolean subtitleRequestStarted;
     private volatile boolean closing;
     private final VideoPlayerView view;
     private final BiConsumer<Integer, Integer> videoSizeChangedHandler;
@@ -90,7 +91,8 @@ public class VideoPlayerController {
             } else if (event.getCode() == KeyCode.HOME) {
                 startOver();
                 event.consume();
-            } else if (event.getCode() == KeyCode.S && subtitlesRequested) {
+            } else if (event.getCode() == KeyCode.S) {
+                // S can turn subtitles on even if -S was not used at startup.
                 toggleSubtitles();
                 event.consume();
             } else if (event.getCode() == KeyCode.A) {
@@ -105,34 +107,61 @@ public class VideoPlayerController {
         return view;
     }
 
-    // Start normally without subtitles. Otherwise prepare the first set of captions
-    // before starting playback so that they do not arrive too late.
+    // Start the video immediately so a slow subtitle server cannot delay playback.
     public void play(File file) {
+        currentVideo = file;
+        subtitleRequestStarted = false;
+        subtitles = List.of();
+
         view.setPlaybackControlsDisabled(false);
-        view.setSubtitlesAvailable(subtitlesRequested);
-        if (!subtitlesRequested) {
-            playbackStarted = true;
-            model.play(file);
+        // The button must also work when the player starts without -S.
+        view.setSubtitlesAvailable(true);
+        view.showSubtitlesEnabled(subtitlesEnabled);
+        model.play(file);
+
+        if (subtitlesEnabled) {
+            startSubtitleLoading();
+        }
+    }
+
+    // Requests the subtitles on a background thread, only once per video.
+    private void startSubtitleLoading() {
+        if (closing || currentVideo == null || subtitleRequestStarted) {
             return;
         }
 
-        view.setStatus("Preparing subtitles...");
+        subtitleRequestStarted = true;
+        File file = currentVideo;
+
+        // For -S, start at the beginning. When S is pressed later, start
+        // near the current playback position instead of transcribing old audio.
+        long startUs = subtitlesRequested
+                ? 0
+                : Math.max(0, model.getCurrentTimestampUs() - 1_000_000L);
+
+        view.setStatus("Loading subtitles...");
         subtitleThread = new Thread(() -> {
             try {
-                new SubtitleClient().getSubtitles(file, lines -> Platform.runLater(() -> {
-                    if (closing) {
-                        return;
+                new SubtitleClient().getSubtitles(file, startUs, lines ->
+                        Platform.runLater(() -> {
+                            if (!closing) {
+                                setSubtitles(lines);
+                                if (!lines.isEmpty()) {
+                                    view.setStatus(file.getName());
+                                }
+                            }
+                        }));
+
+                // All chunks have been tried. Playback continues even if none worked.
+                Platform.runLater(() -> {
+                    if (!closing && subtitles.isEmpty()) {
+                        view.setStatus("Subtitles unavailable (video still playing)");
                     }
-                    setSubtitles(lines);
-                    startVideoIfNeeded(file);
-                }));
-                // Also handle a video with no audio track.
-                Platform.runLater(() -> startVideoIfNeeded(file));
+                });
             } catch (Exception error) {
                 System.err.println("Could not load subtitles: " + error.getMessage());
                 Platform.runLater(() -> {
                     if (!closing) {
-                        startVideoIfNeeded(file);
                         view.setStatus("Subtitles unavailable (video still playing)");
                     }
                 });
@@ -140,14 +169,6 @@ public class VideoPlayerController {
         }, "subtitle-loader");
         subtitleThread.setDaemon(true);
         subtitleThread.start();
-    }
-
-    // This method is only called from the JavaFX application thread.
-    private void startVideoIfNeeded(File file) {
-        if (!closing && !playbackStarted) {
-            playbackStarted = true;
-            model.play(file);
-        }
     }
 
     // Asks the model to release its resources.
@@ -160,12 +181,18 @@ public class VideoPlayerController {
     }
 
     private void toggleSubtitles() {
-        if (!subtitlesRequested) {
+        if (closing) {
             return;
         }
+
         subtitlesEnabled = !subtitlesEnabled;
         view.showSubtitlesEnabled(subtitlesEnabled);
         updateSubtitle();
+
+        // The first time subtitles are enabled, start loading them.
+        if (subtitlesEnabled) {
+            startSubtitleLoading();
+        }
     }
 
     // Sets a new list of subtitles when they have been retrieved.
@@ -211,7 +238,7 @@ public class VideoPlayerController {
     private void stopAndExit() {
         shutdown();
         model.stopPlayback();
-        javafx.application.Platform.exit();
+        Platform.exit();
     }
 
     // Passes the decoded video size back to the window.

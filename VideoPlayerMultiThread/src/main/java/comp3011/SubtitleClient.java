@@ -27,33 +27,58 @@ public class SubtitleClient {
     private final ObjectMapper mapper = new ObjectMapper();
     private static final long CHUNK_MICROSECONDS = 20_000_000L;
 
+    // Keep the original method for code that loads subtitles from the beginning.
     public List<Subtitle> getSubtitles(File video, Consumer<List<Subtitle>> onChunk) throws Exception {
+        return getSubtitles(video, 0, onChunk);
+    }
+
+    // Find the correct audio chunks for subtitles enabled mid-playback.
+    public List<Subtitle> getSubtitles(File video, long startUs,
+            Consumer<List<Subtitle>> onChunk) throws Exception {
         List<Subtitle> subtitles = new ArrayList<>();
-        // Break the sound into 20-second MP3 files to avoid the 25 MB API limit.
+
+        // Break the sound into small MP3 files to avoid the 25 MB API limit.
         try (FFmpegFrameGrabber grabber = new FFmpegFrameGrabber(video)) {
             grabber.start();
             if (grabber.getAudioChannels() == 0) {
                 return subtitles;
             }
+
+            // Always read from the beginning so each run uses the same
+            // 20-second chunk boundaries, even if S is pressed later.
+            // Only send chunks that could still contain useful subtitles.
+            long firstChunkToSend = Math.max(0, startUs / CHUNK_MICROSECONDS);
+
             FFmpegFrameRecorder recorder = null;
             File audioFile = null;
             long chunkStart = -1;
+            long chunkNumber = 0;
+
             try {
                 Frame frame;
-                while (!Thread.currentThread().isInterrupted() && (frame = grabber.grabSamples()) != null) {
+                while (!Thread.currentThread().isInterrupted()
+                        && (frame = grabber.grabSamples()) != null) {
                     if (frame.samples == null) {
                         continue;
                     }
+
                     long timestamp = grabber.getTimestamp();
                     if (recorder != null && timestamp - chunkStart >= CHUNK_MICROSECONDS) {
                         recorder.stop();
                         recorder.release();
                         recorder = null;
-                        subtitles.addAll(sendAudio(audioFile, chunkStart / 1_000_000.0));
-                        onChunk.accept(List.copyOf(subtitles));
+
+                        // Earlier chunks have already passed on screen. Avoid
+                        // uploading them, but keep the chunk positions the same.
+                        if (chunkNumber >= firstChunkToSend) {
+                            addChunkIfAvailable(audioFile, chunkStart / 1_000_000.0,
+                                    subtitles, onChunk);
+                        }
+                        chunkNumber++;
                         Files.deleteIfExists(audioFile.toPath());
                         audioFile = null;
                     }
+
                     if (recorder == null) {
                         chunkStart = timestamp;
                         audioFile = File.createTempFile("subtitle-audio-", ".mp3");
@@ -65,14 +90,18 @@ public class SubtitleClient {
                         recorder.setAudioBitrate(48000);
                         recorder.start();
                     }
-                    recorder.recordSamples(grabber.getSampleRate(), grabber.getAudioChannels(), frame.samples);
+                    recorder.recordSamples(grabber.getSampleRate(),
+                            grabber.getAudioChannels(), frame.samples);
                 }
+
                 if (recorder != null && !Thread.currentThread().isInterrupted()) {
                     recorder.stop();
                     recorder.release();
                     recorder = null;
-                    subtitles.addAll(sendAudio(audioFile, chunkStart / 1_000_000.0));
-                    onChunk.accept(List.copyOf(subtitles));
+                    if (chunkNumber >= firstChunkToSend) {
+                        addChunkIfAvailable(audioFile, chunkStart / 1_000_000.0,
+                                subtitles, onChunk);
+                    }
                 }
             } finally {
                 if (recorder != null) {
@@ -87,8 +116,39 @@ public class SubtitleClient {
         return subtitles;
     }
 
+    // If the server is temporarily unavailable, try the chunk again.
+    // A failed chunk should not prevent later audio from being transcribed.
+    void addChunkIfAvailable(File audio, double offset, List<Subtitle> subtitles,
+            Consumer<List<Subtitle>> onChunk) throws InterruptedException {
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            if (Thread.currentThread().isInterrupted()) {
+                throw new InterruptedException("Subtitle loading stopped");
+            }
+
+            try {
+                subtitles.addAll(sendAudio(audio, offset));
+                break;
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw error;
+            } catch (Exception error) {
+                System.err.println("Subtitle chunk failed (attempt " + attempt + "): "
+                        + error.getMessage());
+
+                // Give the server a short chance to recover before retrying.
+                if (attempt == 1) {
+                    Thread.sleep(1000);
+                }
+            }
+        }
+
+        // Always update the controller, even if this chunk had no subtitles.
+        onChunk.accept(List.copyOf(subtitles));
+    }
+
     // Forward one MP3 chunk to our Spring Boot server, not directly to OpenAI.
-    private List<Subtitle> sendAudio(File audio, double offset) throws Exception {
+    // Protected so a test can replace the network call with a fake response.
+    protected List<Subtitle> sendAudio(File audio, double offset) throws Exception {
         String boundary = "VideoUpload" + System.nanoTime();
         byte[] header = ("--" + boundary + "\r\n"
                 + "Content-Disposition: form-data; name=\"audio\"; filename=\"audio.mp3\"\r\n"

@@ -2,8 +2,6 @@ package com.example.SpeechToText.controller;
 
 import java.util.Map;
 
-import com.example.SpeechToText.service.SpeechToTextException;
-import com.example.SpeechToText.service.WhisperSubtitleService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -12,6 +10,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+
+import com.example.SpeechToText.service.SpeechToTextException;
+import com.example.SpeechToText.service.WhisperSubtitleService;
 
 // Assignment 3 endpoints alongside Assignment 1's existing /transcribe endpoint.
 @RestController
@@ -42,6 +43,6 @@ public class SubtitleController {
 
     @GetMapping("/global/usage")
     public Map<String, Double> usage() {
-        return Map.of("usage", whisper.getUsageMinutes());
+        return Map.of("usage", whisper.getUsageSeconds());
     }
 }
