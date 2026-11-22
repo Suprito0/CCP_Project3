@@ -1,18 +1,19 @@
-.PHONY: run
+.PHONY: run build compile test clean git check-env
 
-ifeq ($(OS),Windows_NT)
-run:
-	@powershell -NoProfile -Command "Get-Content .env | ForEach-Object { if ($$_ -match '^\s*([A-Za-z_]\w*)=(.*)$$') { [Environment]::SetEnvironmentVariable($$matches[1], $$matches[2].Trim(), 'Process') } }; mvn spring-boot:run; exit $$LASTEXITCODE"
-else
-run:
-	@set -a; . ./.env; set +a; mvn spring-boot:run
+# Load environment variables
+ifneq (,$(wildcard .env))
+include .env
+export OPENAI_API_KEY
 endif
 
+run:
+	mvn spring-boot:run
+
 build:
-	mvn clean package
+	mvn package
 
 compile:
-	mvn clean compile
+	mvn compile
 
 test:
 	mvn test
