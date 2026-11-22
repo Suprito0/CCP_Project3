@@ -115,7 +115,6 @@ public class WhisperSubtitleService {
                         "Transcription returned an empty response");
             }
 
-            System.out.println("Raw Whisper transcription: " + json.get("text"));
             List<SubtitleLine> subtitles = WhisperSubtitleFormatter.format(json);
 
             // Only count a successful cloud request, never a cache hit.

@@ -108,6 +108,7 @@ public class SubtitleClient {
                     recorder.release();
                     recorder = null;
                     if (chunkNumber >= firstChunkToSend) {
+                        System.out.println("Reached final partial audio chunk");
                         addChunkIfAvailable(audioFile, chunkStart / 1_000_000.0,
                                 subtitles, onChunk);
                     }
@@ -129,6 +130,7 @@ public class SubtitleClient {
     // A failed chunk should not prevent later audio from being transcribed.
     void addChunkIfAvailable(File audio, double offset, List<Subtitle> subtitles,
             Consumer<List<Subtitle>> onChunk) throws InterruptedException {
+        System.out.printf("Uploading subtitle chunk at %.2f seconds%n", offset);
         for (int attempt = 1; attempt <= 2; attempt++) {
             if (Thread.currentThread().isInterrupted()) {
                 throw new InterruptedException("Subtitle loading stopped");
@@ -141,11 +143,8 @@ public class SubtitleClient {
                 Thread.currentThread().interrupt();
                 throw error;
             } catch (Exception error) {
-                System.err.println("Subtitle chunk failed (attempt " + attempt + ")");
-                System.err.println("Error type: " + error.getClass().getName());
-                System.err.println("Error message: " + error.getMessage());
-
-                error.printStackTrace();
+                System.err.println("Subtitle chunk at " + offset
+                    + " seconds failed (attempt " + attempt + "/2): " + error);
 
                 // Give the server a short chance to recover before retrying.
                 if (attempt == 1) {
