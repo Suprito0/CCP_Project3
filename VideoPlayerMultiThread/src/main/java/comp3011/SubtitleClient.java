@@ -13,13 +13,13 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import org.bytedeco.ffmpeg.global.avcodec;
+import org.bytedeco.ffmpeg.global.avutil;
 import org.bytedeco.javacv.FFmpegFrameGrabber;
 import org.bytedeco.javacv.FFmpegFrameRecorder;
 import org.bytedeco.javacv.Frame;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
 // This runs on a background thread. It must not block JavaFX video playback.
 public class SubtitleClient {
     private final HttpClient http = HttpClient.newBuilder()
@@ -39,6 +39,12 @@ public class SubtitleClient {
 
         // Break the sound into small MP3 files to avoid the 25 MB API limit.
         try (FFmpegFrameGrabber grabber = new FFmpegFrameGrabber(video)) {
+
+            // Convert the decoded audio to the format needed by Whisper.
+            grabber.setSampleRate(16000);
+            grabber.setAudioChannels(1);
+            grabber.setSampleFormat(avutil.AV_SAMPLE_FMT_S16);
+
             grabber.start();
             if (grabber.getAudioChannels() == 0) {
                 return subtitles;
@@ -90,8 +96,11 @@ public class SubtitleClient {
                         recorder.setAudioBitrate(48000);
                         recorder.start();
                     }
-                    recorder.recordSamples(grabber.getSampleRate(),
-                            grabber.getAudioChannels(), frame.samples);
+                    recorder.recordSamples(
+                            frame.sampleRate,
+                            frame.audioChannels,
+                            frame.samples
+                    );
                 }
 
                 if (recorder != null && !Thread.currentThread().isInterrupted()) {
@@ -132,8 +141,11 @@ public class SubtitleClient {
                 Thread.currentThread().interrupt();
                 throw error;
             } catch (Exception error) {
-                System.err.println("Subtitle chunk failed (attempt " + attempt + "): "
-                        + error.getMessage());
+                System.err.println("Subtitle chunk failed (attempt " + attempt + ")");
+                System.err.println("Error type: " + error.getClass().getName());
+                System.err.println("Error message: " + error.getMessage());
+
+                error.printStackTrace();
 
                 // Give the server a short chance to recover before retrying.
                 if (attempt == 1) {

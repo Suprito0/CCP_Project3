@@ -1,11 +1,19 @@
+.PHONY: run
+
 run:
-	./mvnw spring-boot:run
+	@set -a; . ./.env; set +a; mvn spring-boot:run
 
 build:
-	./mvnw clean package
+	mvn clean package
 
 compile:
-	./mvnw clean compile
+	mvn clean compile
+
+test:
+	mvn test
+
+clean:
+	mvn clean
 
 git:
 	git add .

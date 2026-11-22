@@ -92,6 +92,10 @@ public class WhisperSubtitleService {
         MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
         body.add("model", "whisper-1");
         body.add("response_format", "verbose_json");
+
+        body.add("language", "en");
+        body.add("temperature", "0");
+
         body.add("timestamp_granularities[]", "word");
         body.add("timestamp_granularities[]", "segment");
         body.add("file", new HttpEntity<>(resource, headers));
@@ -111,6 +115,7 @@ public class WhisperSubtitleService {
                         "Transcription returned an empty response");
             }
 
+            System.out.println("Raw Whisper transcription: " + json.get("text"));
             List<SubtitleLine> subtitles = WhisperSubtitleFormatter.format(json);
 
             // Only count a successful cloud request, never a cache hit.
